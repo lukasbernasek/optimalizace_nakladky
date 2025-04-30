@@ -1,42 +1,57 @@
 
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
   <title>Plánovač nakládky</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script>
+    function addRow() {
+      const table = document.getElementById("palety_table");
+      const i = table.rows.length - 1;
+      const row = table.insertRow();
+      row.innerHTML = `
+        <td><input name="jmeno${i}" value="Typ ${i+1}"></td>
+        <td><input name="delka${i}" type="number" step="0.01" value="1.2"></td>
+        <td><input name="sirka${i}" type="number" step="0.01" value="0.8"></td>
+        <td><input name="vaha${i}" type="number" value="1000"></td>
+        <td><input name="pocet${i}" type="number" value="0"></td>
+      `;
+    }
+  </script>
 </head>
 <body>
   <h1>Optimalizace nakládky kamionu</h1>
   <form method="post">
     <fieldset>
       <legend>Rozměry kamionu</legend>
-      Délka (m): <input name="delka_kamionu" type="number" step="0.1" value="13.6">
-      Šířka (m): <input name="sirka_kamionu" type="number" step="0.1" value="2.5">
+      Délka (m): <input name="delka_kamionu" type="number" step="0.1" value="{{ delka }}">
+      Šířka (m): <input name="sirka_kamionu" type="number" step="0.1" value="{{ sirka }}">
     </fieldset>
     <fieldset>
-      <legend>Palety (až 5 typů)</legend>
-      <table>
+      <legend>Palety</legend>
+      <table id="palety_table">
         <tr><th>Jméno</th><th>Délka</th><th>Šířka</th><th>Váha</th><th>Počet</th></tr>
-        {% for i in range(5) %}
+        {% for i, row in enumerate(palety_data or [(f"Typ {i+1}",1.2,0.8,1000,0) for i in range(5)]) %}
         <tr>
-          <td><input name="jmeno{{i}}" value="Typ {{i+1}}"></td>
-          <td><input name="delka{{i}}" type="number" step="0.01" value="1.2"></td>
-          <td><input name="sirka{{i}}" type="number" step="0.01" value="0.8"></td>
-          <td><input name="vaha{{i}}" type="number" value="1000"></td>
-          <td><input name="pocet{{i}}" type="number" value="0"></td>
+          <td><input name="jmeno{{i}}" value="{{row[0]}}"></td>
+          <td><input name="delka{{i}}" type="number" step="0.01" value="{{row[1]}}"></td>
+          <td><input name="sirka{{i}}" type="number" step="0.01" value="{{row[2]}}"></td>
+          <td><input name="vaha{{i}}" type="number" value="{{row[3]}}"></td>
+          <td><input name="pocet{{i}}" type="number" value="{{row[4]}}"></td>
         </tr>
         {% endfor %}
       </table>
+      <button type="button" onclick="addRow()">➕ Přidat další řádek</button>
     </fieldset>
     <label>Strategie:</label>
     <select name="strategie">
-      <option value="nejvetsi">Největší plocha první</option>
-      <option value="nejmensi">Nejmenší plocha první</option>
-      <option value="nejtezsi">Nejtěžší palety první</option>
-      <option value="nahodne">Náhodné pořadí</option>
+      <option value="nejvetsi" {% if strategie == 'nejvetsi' %}selected{% endif %}>Největší plocha první</option>
+      <option value="nejmensi" {% if strategie == 'nejmensi' %}selected{% endif %}>Nejmenší plocha první</option>
+      <option value="nejtezsi" {% if strategie == 'nejtezsi' %}selected{% endif %}>Nejtěžší palety první</option>
+      <option value="nahodne" {% if strategie == 'nahodne' %}selected{% endif %}>Náhodné pořadí</option>
     </select>
     <br><br>
-    <button type="submit">Vygenerovat</button>
+    <button type="submit">Vygenerovat plán</button>
   </form>
 
   {% if vysledky %}
