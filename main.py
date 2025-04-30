@@ -1,3 +1,4 @@
+
 from flask import Flask, render_template_string, request
 import matplotlib.pyplot as plt
 import io
@@ -49,14 +50,21 @@ def najdi_misto(kamion, paleta, umistene):
 
 def naplanuj(kamion, palety):
     umistene = []
+    nenalozene = {}
+
     for paleta in palety:
+        zbyva = paleta.pocet
         for _ in range(paleta.pocet):
             misto = najdi_misto(kamion, paleta, umistene)
             if misto:
                 umistene.append((*misto, paleta.jmeno))
+                zbyva -= 1
             else:
                 break
-    return umistene
+        if zbyva > 0:
+            nenalozene[paleta.jmeno] = zbyva
+
+    return umistene, nenalozene
 
 def vykresli_png(kamion, umistene):
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -81,44 +89,81 @@ def vykresli_png(kamion, umistene):
 HTML_FORM = """
 <!doctype html>
 <title>Plánovač nakládky</title>
-<h1>Zadej více typů palet (každý řádek = jméno,délka,šířka,váha,počet)</h1>
+<h1>Parametry kamionu</h1>
 <form method=post>
-<textarea name=palety rows=8 cols=80>
-Typ A,1.2,0.8,1200,31
-Typ B,1.3,0.8,3000,2
-Typ C,3.45,0.21,4800,1
-</textarea><br>
-<label>Strategie:</label>
+Délka (m): <input name=delka_kamionu type=number step=0.1 value=13.6> &nbsp;
+Šířka (m): <input name=sirka_kamionu type=number step=0.1 value=2.5><br><br>
+
+<h2>Typy palet</h2>
+<table border=1 cellpadding=5>
+<tr><th>Jméno</th><th>Délka (m)</th><th>Šířka (m)</th><th>Váha (kg)</th><th>Počet</th></tr>
+{% for i in range(5) %}
+<tr>
+<td><input name="jmeno{{i}}" value="Typ {{i+1}}"></td>
+<td><input name="delka{{i}}" type=number step=0.01 value=1.2></td>
+<td><input name="sirka{{i}}" type=number step=0.01 value=0.8></td>
+<td><input name="vaha{{i}}" type=number step=1 value=1000></td>
+<td><input name="pocet{{i}}" type=number value=0></td>
+</tr>
+{% endfor %}
+</table><br>
+
+Strategie:
 <select name=strategie>
   <option value="nejvetsi">Největší plocha první</option>
   <option value="nejmensi">Nejmenší plocha první</option>
   <option value="nejtezsi">Nejtěžší palety první</option>
   <option value="nahodne">Náhodné pořadí</option>
-</select><br>
+</select><br><br>
+
 <input type=submit value="Vygenerovat plán">
 </form>
+
 {% if image %}
 <hr>
 <h2>Vizualizace:</h2>
-<img src="data:image/png;base64,{{image}}" style="max-width:100%;">
+<img src="data:image/png;base64,{{image}}" style="max-width:100%;"><br>
+
+{% if nenalozene %}
+<h3>❌ Nenaložené palety:</h3>
+<ul>
+{% for jmeno, pocet in nenalozene.items() %}
+<li>{{ jmeno }}: {{ pocet }} ks</li>
+{% endfor %}
+</ul>
+{% else %}
+<p>✅ Všechny palety byly naloženy.</p>
+{% endif %}
 {% endif %}
 """
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     image = None
+    nenalozene = {}
     if request.method == "POST":
-        vstup = request.form["palety"]
-        strategie = request.form["strategie"]
+        try:
+            sirka = float(request.form["sirka_kamionu"])
+            delka = float(request.form["delka_kamionu"])
+        except:
+            sirka, delka = 2.5, 13.6
+
+        kamion = Kamion(sirka, delka)
         palety = []
 
-        for radek in vstup.strip().splitlines():
+        for i in range(5):
             try:
-                jmeno, d, s, v, p = [x.strip() for x in radek.split(",")]
-                palety.append(Paleta(float(d), float(s), int(p), jmeno, float(v)))
+                jmeno = request.form[f"jmeno{i}"]
+                d = float(request.form[f"delka{i}"])
+                s = float(request.form[f"sirka{i}"])
+                v = float(request.form[f"vaha{i}"])
+                p = int(request.form[f"pocet{i}"])
+                if p > 0:
+                    palety.append(Paleta(d, s, p, jmeno, v))
             except:
                 continue
 
+        strategie = request.form["strategie"]
         if strategie == "nejvetsi":
             palety.sort(key=lambda p: p.plocha(), reverse=True)
         elif strategie == "nejmensi":
@@ -128,11 +173,10 @@ def index():
         elif strategie == "nahodne":
             random.shuffle(palety)
 
-        kamion = Kamion(2.5, 13.6)
-        vysledek = naplanuj(kamion, palety)
-        image = vykresli_png(kamion, vysledek)
+        umistene, nenalozene = naplanuj(kamion, palety)
+        image = vykresli_png(kamion, umistene)
 
-    return render_template_string(HTML_FORM, image=image)
+    return render_template_string(HTML_FORM, image=image, nenalozene=nenalozene)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
