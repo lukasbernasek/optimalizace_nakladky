@@ -86,10 +86,10 @@ def index():
     image = None
     nenalozene = {}
     vysledky = False
-    palety_data = []
+    strategie = "nejvetsi"
     sirka = 2.5
     delka = 13.6
-    strategie = "nejvetsi"
+    palety_data = []
 
     if request.method == "POST":
         sirka = float(request.form.get("sirka_kamionu", 2.5))
@@ -98,9 +98,7 @@ def index():
         kamion = Kamion(sirka, delka)
         palety = []
         index = 0
-        while True:
-            if f"jmeno{index}" not in request.form:
-                break
+        while f"jmeno{index}" in request.form:
             jmeno = request.form.get(f"jmeno{index}")
             try:
                 d = float(request.form.get(f"delka{index}"))
@@ -126,10 +124,10 @@ def index():
         umistene, nenalozene = naplanuj(kamion, palety)
         image = vykresli_png(kamion, umistene)
         vysledky = True
+    else:
+        # Výchozích 5 prázdných řádků pro GET načtení
+        palety_data = [(f"Typ {i+1}", 1.2, 0.8, 1000, 0) for i in range(5)]
 
     return render_template("index.html", image=image, nenalozene=nenalozene,
                            vysledky=vysledky, palety_data=palety_data,
                            sirka=sirka, delka=delka, strategie=strategie)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
