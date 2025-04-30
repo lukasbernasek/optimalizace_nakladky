@@ -1,5 +1,10 @@
+from flask import Flask, render_template_string, request
 import matplotlib.pyplot as plt
+import io
 import random
+import base64
+
+app = Flask(__name__)
 
 class Kamion:
     def __init__(self, sirka, delka):
@@ -44,75 +49,90 @@ def najdi_misto(kamion, paleta, umistene):
 
 def naplanuj(kamion, palety):
     umistene = []
-    nenalozene = []
-
-    while True:
-        paleta_vlozena = False
-        for paleta in palety:
-            if paleta.pocet <= 0:
-                continue
+    for paleta in palety:
+        for _ in range(paleta.pocet):
             misto = najdi_misto(kamion, paleta, umistene)
             if misto:
                 umistene.append((*misto, paleta.jmeno))
-                paleta.pocet -= 1
-                paleta_vlozena = True
-        if not paleta_vlozena:
-            break
+            else:
+                break
+    return umistene
 
-    for paleta in palety:
-        if paleta.pocet > 0:
-            nenalozene.append((paleta.jmeno, paleta.pocet))
-
-    return umistene, nenalozene
-
-def vykresli(kamion, umistene, nenalozene, uloz_pdf=None):
+def vykresli_png(kamion, umistene):
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.set_xlim(0, kamion.delka)
     ax.set_ylim(0, kamion.sirka)
-    ax.add_patch(plt.Rectangle((0, 0), kamion.delka, kamion.sirka, fill=False, linewidth=2))
+    ax.set_title("Optimalizace nakládky kamionu")
+    ax.set_xlabel("Délka (m)")
+    ax.set_ylabel("Šířka (m)")
+    ax.set_aspect('equal')
+    ax.grid(True)
 
     for (x, y, d, s, jmeno) in umistene:
         ax.add_patch(plt.Rectangle((x, y), d, s, fill=True, edgecolor='black'))
         ax.text(x + d/2, y + s/2, jmeno, ha='center', va='center', fontsize=6)
 
-    ax.set_xlabel("Délka (m)")
-    ax.set_ylabel("Šířka (m)")
-    ax.set_title("Optimalizace nakládky kamionu")
-    ax.set_aspect('equal')
-    plt.grid(True)
-
-    if uloz_pdf:
-        plt.savefig(uloz_pdf)
-        print(f"✅ Plán uložen do '{uloz_pdf}'.")
-
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
     plt.close(fig)
+    return base64.b64encode(buf.read()).decode('utf-8')
 
-def priprav_a_nakresli_variantu(kamion, palety_original, strategie, idx):
-    palety = [Paleta(p.delka, p.sirka, p.pocet, p.jmeno, p.vaha) for p in palety_original]
+HTML_FORM = """
+<!doctype html>
+<title>Plánovač nakládky</title>
+<h1>Zadej více typů palet (každý řádek = jméno,délka,šířka,váha,počet)</h1>
+<form method=post>
+<textarea name=palety rows=8 cols=80>
+Typ A,1.2,0.8,1200,31
+Typ B,1.3,0.8,3000,2
+Typ C,3.45,0.21,4800,1
+</textarea><br>
+<label>Strategie:</label>
+<select name=strategie>
+  <option value="nejvetsi">Největší plocha první</option>
+  <option value="nejmensi">Nejmenší plocha první</option>
+  <option value="nejtezsi">Nejtěžší palety první</option>
+  <option value="nahodne">Náhodné pořadí</option>
+</select><br>
+<input type=submit value="Vygenerovat plán">
+</form>
+{% if image %}
+<hr>
+<h2>Vizualizace:</h2>
+<img src="data:image/png;base64,{{image}}" style="max-width:100%;">
+{% endif %}
+"""
 
-    if strategie == "nejvetsi":
-        palety.sort(key=lambda p: p.plocha(), reverse=True)
-    elif strategie == "nejmensi":
-        palety.sort(key=lambda p: p.plocha())
-    elif strategie == "nejtezsi":
-        palety.sort(key=lambda p: p.vaha, reverse=True)
-    elif strategie == "nahodne":
-        random.shuffle(palety)
+@app.route("/", methods=["GET", "POST"])
+def index():
+    image = None
+    if request.method == "POST":
+        vstup = request.form["palety"]
+        strategie = request.form["strategie"]
+        palety = []
 
-    umistene, nenalozene = naplanuj(kamion, palety)
-    vykresli(kamion, umistene, nenalozene, uloz_pdf=f"nakladka_varianta_{idx}.pdf")
+        for radek in vstup.strip().splitlines():
+            try:
+                jmeno, d, s, v, p = [x.strip() for x in radek.split(",")]
+                palety.append(Paleta(float(d), float(s), int(p), jmeno, float(v)))
+            except:
+                continue
 
-# --- Spuštění ---
+        if strategie == "nejvetsi":
+            palety.sort(key=lambda p: p.plocha(), reverse=True)
+        elif strategie == "nejmensi":
+            palety.sort(key=lambda p: p.plocha())
+        elif strategie == "nejtezsi":
+            palety.sort(key=lambda p: p.vaha, reverse=True)
+        elif strategie == "nahodne":
+            random.shuffle(palety)
+
+        kamion = Kamion(2.5, 13.6)
+        vysledek = naplanuj(kamion, palety)
+        image = vykresli_png(kamion, vysledek)
+
+    return render_template_string(HTML_FORM, image=image)
+
 if __name__ == "__main__":
-    kamion = Kamion(2.5, 13.6)
-
-    palety = [
-        Paleta(1.2, 0.8, 31, "Typ A", 1200),
-        Paleta(1.3, 0.8, 2, "Typ B", 3000),
-        Paleta(3.45, 0.21, 1, "Typ C", 4800),
-    ]
-
-    strategie_list = ["nejvetsi", "nejmensi", "nejtezsi", "nahodne"]
-    for idx, strategie in enumerate(strategie_list, start=1):
-        priprav_a_nakresli_variantu(kamion, palety, strategie, idx)
-
+    app.run(host="0.0.0.0", port=5000)
